@@ -1,0 +1,1298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Volterra Tonnetz Synthesizer II</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Spectral:ital,wght@1,300;1,500&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════ TOKENS */
+:root {
+  --bg:      #020408;
+  --surf:    #050810;
+  --pan:     #07091a;
+  --b0:      #0d1128;
+  --b1:      #141830;
+  --b2:      #1c2240;
+
+  --am:      #e8a228;  /* amber  – OSC1   */
+  --am2:     #f5c86a;
+  --amD:     rgba(232,162,40,.14);
+  --amG:     rgba(232,162,40,.55);
+
+  --cy:      #18c4e0;  /* cyan   – OSC2   */
+  --cy2:     #5adaf0;
+  --cyD:     rgba(24,196,224,.14);
+  --cyG:     rgba(24,196,224,.55);
+
+  --li:      #2ae878;  /* lime   – TARGET */
+  --li2:     #74f4ac;
+  --liD:     rgba(42,232,120,.14);
+  --liG:     rgba(42,232,120,.55);
+
+  --or:      #f06030;  /* orange – FM correction */
+  --orG:     rgba(240,96,48,.5);
+
+  --tx:      #9aa4c8;
+  --txH:     #ccd0e8;
+  --txD:     #2e3460;
+  --txM:     #556090;
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+
+html, body {
+  width:100%; height:100vh; overflow:hidden;
+  background:var(--bg);
+  color:var(--tx);
+  font-family:'IBM Plex Mono','Courier New',monospace;
+  font-size:11px;
+}
+body { display:grid; grid-template-rows:42px 1fr 136px; }
+
+/* ─── HEADER ─── */
+header {
+  display:flex; align-items:center; gap:12px;
+  padding:0 16px;
+  background:var(--surf);
+  border-bottom:1px solid var(--b1);
+  position:relative;
+  flex-shrink:0;
+}
+header::after {
+  content:'';
+  position:absolute; left:0; right:0; bottom:0; height:1px;
+  background:linear-gradient(90deg,transparent,var(--amG) 45%,var(--cyG) 65%,transparent);
+}
+.h-logo { font-weight:700; font-size:12px; letter-spacing:5px; color:var(--am); text-shadow:0 0 22px var(--amG); white-space:nowrap; }
+.h-sub  { font-style:italic; font-size:10px; color:var(--txD); white-space:nowrap; letter-spacing:1px; }
+.h-sp   { flex:1; }
+.h-badge {
+  font-size:10px; letter-spacing:2px; padding:3px 10px;
+  border:1px solid var(--b2); color:var(--txD);
+  transition:.15s;
+}
+.h-badge.tt { border-color:var(--am); color:var(--am); box-shadow:0 0 12px var(--amD); text-shadow:0 0 8px var(--amG); }
+
+#playBtn {
+  background:none; border:1px solid var(--am); color:var(--am);
+  font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:3px;
+  padding:5px 16px; cursor:pointer; transition:.12s;
+  text-shadow:0 0 8px var(--amG);
+}
+#playBtn:hover { background:var(--amD); box-shadow:0 0 16px var(--amG); }
+#playBtn.stop  { color:#e84060; border-color:#e84060; text-shadow:none; box-shadow:none; }
+
+/* ─── MAIN ─── */
+.main { display:grid; grid-template-columns:1fr 296px; overflow:hidden; min-height:0; }
+
+/* ─── TONNETZ PANEL ─── */
+.tp {
+  display:flex; flex-direction:column; gap:6px;
+  padding:10px 12px; border-right:1px solid var(--b0);
+  overflow:hidden; min-height:0;
+}
+.tp-top { display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+.sec-lbl { font-size:9px; letter-spacing:3px; color:var(--txD); text-transform:uppercase; }
+
+/* slot buttons */
+.slotRow { display:flex; gap:4px; align-items:center; }
+.slotBtn {
+  font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:2px;
+  padding:3px 9px; background:none; cursor:pointer; transition:.1s;
+  border:1px solid var(--b2); color:var(--txD);
+}
+.slotBtn.s0.on { border-color:var(--am); color:var(--am); box-shadow:0 0 8px var(--amD); }
+.slotBtn.s1.on { border-color:var(--cy); color:var(--cy); box-shadow:0 0 8px var(--cyD); }
+.slotBtn.s2.on { border-color:var(--li); color:var(--li); box-shadow:0 0 8px var(--liD); }
+.slotBtn.clr   { border-color:#443; color:#774; }
+.slotBtn.clr:hover { color:#aa8; border-color:#665; }
+
+/* chord presets */
+.presets { display:flex; gap:4px; flex-shrink:0; flex-wrap:wrap; }
+.preBtn {
+  font-family:'IBM Plex Mono',monospace; font-size:9px; letter-spacing:1px;
+  padding:3px 8px; background:none; cursor:pointer; transition:.1s;
+  border:1px solid var(--b1); color:var(--txM);
+}
+.preBtn:hover { border-color:var(--b2); color:var(--txH); background:rgba(255,255,255,.02); }
+
+#tonnetz { cursor:crosshair; display:block; flex-shrink:0; max-width:100%; }
+
+/* tonnetz legend */
+.tleg { display:flex; gap:14px; flex-shrink:0; align-items:center; }
+.tleg-item { display:flex; align-items:center; gap:4px; font-size:9px; color:var(--txD); }
+.tleg-dot { width:7px; height:7px; border-radius:50%; }
+.tleg-dot.a { background:var(--am); box-shadow:0 0 5px var(--amG); }
+.tleg-dot.c { background:var(--cy); box-shadow:0 0 5px var(--cyG); }
+.tleg-dot.l { background:var(--li); box-shadow:0 0 5px var(--liG); }
+.tleg-dot.o { background:var(--or); box-shadow:0 0 5px var(--orG); }
+
+/* ─── CONTROLS PANEL ─── */
+.cp {
+  background:var(--surf);
+  overflow-y:auto; padding:9px;
+  display:flex; flex-direction:column; gap:7px;
+  min-height:0;
+}
+.cp::-webkit-scrollbar { width:3px; }
+.cp::-webkit-scrollbar-thumb { background:var(--b2); }
+
+.csec {
+  border:1px solid var(--b0);
+  padding:8px 9px;
+}
+.csec-hd {
+  font-size:9px; letter-spacing:2px; text-transform:uppercase;
+  display:flex; align-items:center; gap:5px; margin-bottom:8px;
+}
+.csec-dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+.csec-dot.a { background:var(--am); box-shadow:0 0 5px var(--amG); }
+.csec-dot.c { background:var(--cy); box-shadow:0 0 5px var(--cyG); }
+.csec-dot.l { background:var(--li); box-shadow:0 0 5px var(--liG); }
+.csec-dot.o { background:var(--or); box-shadow:0 0 5px var(--orG); }
+
+/* Note cards */
+.note-cards { display:flex; flex-direction:column; gap:4px; margin-bottom:6px; }
+.ncard {
+  background:var(--bg); border:1px solid var(--b0);
+  padding:5px 8px;
+  display:grid; grid-template-columns:18px 1fr auto;
+  align-items:center; gap:6px;
+  transition:.15s;
+}
+.ncard.empty { opacity:.45; }
+.ncard-role { font-size:8px; letter-spacing:1px; writing-mode:vertical-rl; transform:rotate(180deg); text-align:center; }
+.ncard-role.a { color:var(--am); }
+.ncard-role.c { color:var(--cy); }
+.ncard-role.l { color:var(--li); }
+.ncard-body { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.ncard-note { font-size:20px; font-weight:700; line-height:1.05; }
+.ncard-note.a { color:var(--am); text-shadow:0 0 14px var(--amG); }
+.ncard-note.c { color:var(--cy); text-shadow:0 0 14px var(--cyG); }
+.ncard-note.l { color:var(--li); text-shadow:0 0 14px var(--liG); }
+.ncard-note.empty { color:var(--txD); }
+.ncard-hz { font-size:9px; color:var(--txD); }
+.ncard-ctrl { display:flex; flex-direction:column; gap:2px; align-items:flex-end; }
+.oct-btns { display:flex; gap:2px; }
+.oct-btn {
+  width:18px; height:14px; background:none; cursor:pointer;
+  border:1px solid var(--b1); color:var(--txM);
+  font-size:10px; font-family:'IBM Plex Mono',monospace;
+  display:flex; align-items:center; justify-content:center;
+  transition:.1s;
+}
+.oct-btn:hover { background:var(--b1); color:var(--txH); }
+.ncard-oct { font-size:8px; color:var(--txM); text-align:right; }
+
+/* Solver box */
+.solver-box {
+  background:var(--bg); border:1px solid var(--b0);
+  border-left:2px solid var(--or);
+  padding:7px 9px; font-size:10px; line-height:1.8;
+}
+.solver-formula {
+  font-family:'Spectral',Georgia,serif; font-style:italic; font-size:13px;
+  color:var(--txM); text-align:center; margin-bottom:5px; line-height:1.5;
+}
+.sv { color:var(--am); font-style:normal; }
+.sc { color:var(--cy); }
+.sl { color:var(--li); }
+.so { color:var(--or); font-weight:600; }
+.solver-row { display:flex; justify-content:space-between; font-size:9px; gap:6px; }
+.solver-key { color:var(--txD); }
+.solver-val { color:var(--txH); text-align:right; }
+.solver-val.corr { color:var(--or); font-weight:600; }
+.solver-val.ok   { color:var(--li); }
+
+/* Sliders */
+.sliders { display:flex; flex-direction:column; gap:4px; }
+.srow { display:flex; align-items:center; gap:5px; }
+.slbl { font-size:9px; color:var(--txM); width:22px; flex-shrink:0; font-style:italic; }
+input[type=range] {
+  -webkit-appearance:none; flex:1; height:2px;
+  background:var(--b1); outline:none; cursor:pointer; border-radius:1px;
+}
+input[type=range].sam::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--am); box-shadow:0 0 5px var(--amG); cursor:pointer; }
+input[type=range].scy::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--cy); box-shadow:0 0 5px var(--cyG); cursor:pointer; }
+input[type=range].sli::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--li); box-shadow:0 0 5px var(--liG); cursor:pointer; }
+input[type=range].sor::-webkit-slider-thumb { -webkit-appearance:none; width:10px; height:10px; border-radius:50%; background:var(--or); box-shadow:0 0 5px var(--orG); cursor:pointer; }
+.sval { width:48px; text-align:right; font-size:9px; color:var(--txH); flex-shrink:0; }
+
+/* ADSR canvas */
+#adsrCanvas { display:block; background:var(--bg); border:1px solid var(--b0); }
+
+/* IM products table */
+.im-table { width:100%; border-collapse:collapse; font-size:9px; }
+.im-table td { padding:3px 5px; border-bottom:1px solid var(--b0); }
+.im-table tr.best td { background:rgba(42,232,120,.04); }
+.im-table .im-ord  { color:var(--txD); width:32px; }
+.im-table .im-lbl  { color:var(--txM); }
+.im-table .im-freq { color:var(--txH); text-align:right; }
+.im-table .im-note { color:var(--li); font-weight:600; text-align:right; width:36px; }
+
+/* ─── SPECTRUM ─── */
+.sp {
+  border-top:1px solid var(--b0);
+  background:var(--surf);
+  padding:5px 12px 6px;
+  display:flex; flex-direction:column; gap:4px;
+  flex-shrink:0;
+}
+.sp-top { display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+.sp-leg { display:flex; gap:10px; font-size:9px; }
+.spa { color:var(--am); }
+.spc { color:var(--cy); }
+.spl { color:var(--li); }
+.spo { color:var(--or); }
+#spectrum { display:block; flex:1; width:100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-logo">VOLTERRA · TONNETZ</div>
+  <div class="h-sub">y(t) = H₁[x] + H₃[x,x,x] + H₅[x,x,x,x,x]  ·  IM solved via Volterra kernel expansion</div>
+  <div class="h-sp"></div>
+  <span class="h-badge" id="hBadge">—</span>
+  <button id="playBtn">▶ PLAY</button>
+</header>
+
+<div class="main">
+
+  <!-- ═══════════ TONNETZ ═══════════ -->
+  <div class="tp">
+    <div class="tp-top">
+      <span class="sec-lbl">TONNETZ · CLICK TO BUILD CHORD</span>
+      <div class="slotRow">
+        <button class="slotBtn s0 on" id="sb0">OSC1</button>
+        <button class="slotBtn s1"    id="sb1">OSC2</button>
+        <button class="slotBtn s2"    id="sb2">TARGET</button>
+        <button class="slotBtn clr"   id="sbClr">CLR</button>
+      </div>
+    </div>
+    <div class="presets" id="presets"></div>
+    <canvas id="tonnetz"></canvas>
+    <div class="tleg">
+      <div class="tleg-item"><div class="tleg-dot a"></div>OSC1 f₁</div>
+      <div class="tleg-item"><div class="tleg-dot c"></div>OSC2 f₂ (base)</div>
+      <div class="tleg-item"><div class="tleg-dot o"></div>OSC2 f₂* (corrected)</div>
+      <div class="tleg-item"><div class="tleg-dot l"></div>Target / IM inferred</div>
+    </div>
+  </div>
+
+  <!-- ═══════════ CONTROLS ═══════════ -->
+  <div class="cp">
+
+    <!-- CHORD BUILDER -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot a"></div><span style="color:var(--am)">CHORD · VOLTERRA INPUT</span></div>
+      <div class="note-cards" id="noteCards"></div>
+    </div>
+
+    <!-- VOLTERRA SOLVER -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot o"></div><span style="color:var(--or)">VOLTERRA SOLVER · IM3+ INFERENCE</span></div>
+      <div class="solver-box" id="solverBox">
+        <div class="solver-formula">select two or three notes</div>
+      </div>
+    </div>
+
+    <!-- OSC AMPLITUDES -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot a"></div><span style="color:var(--am)">AMPLITUDES · A₁ A₂</span></div>
+      <div class="sliders">
+        <div class="srow"><span class="slbl">A₁</span><input type="range" class="sam" id="sa1" min="0.05" max="1" step="0.01" value="0.55"><span class="sval" id="sa1v">0.55</span></div>
+        <div class="srow"><span class="slbl">A₂</span><input type="range" class="scy" id="sa2" min="0.05" max="1" step="0.01" value="0.55"><span class="sval" id="sa2v">0.55</span></div>
+      </div>
+    </div>
+
+    <!-- ADSR + FM ENVELOPE -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot c"></div><span style="color:var(--cy)">ADSR · OSC2 AMP + FM ENVELOPE</span></div>
+      <canvas id="adsrCanvas" width="260" height="44" style="width:100%;margin-bottom:7px"></canvas>
+      <div class="sliders">
+        <div class="srow"><span class="slbl">A</span><input type="range" class="scy" id="eA" min="0.005" max="1.5" step="0.005" value="0.06"><span class="sval" id="eAv">60ms</span></div>
+        <div class="srow"><span class="slbl">D</span><input type="range" class="scy" id="eD" min="0.01" max="2"   step="0.01"  value="0.18"><span class="sval" id="eDv">180ms</span></div>
+        <div class="srow"><span class="slbl">S</span><input type="range" class="scy" id="eS" min="0"    max="1"   step="0.01"  value="0.68"><span class="sval" id="eSv">0.68</span></div>
+        <div class="srow"><span class="slbl">R</span><input type="range" class="scy" id="eR" min="0.01" max="3"   step="0.01"  value="0.45"><span class="sval" id="eRv">450ms</span></div>
+      </div>
+    </div>
+
+    <!-- VOLTERRA KERNELS -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot a"></div><span style="color:var(--am)">VOLTERRA KERNELS · ĥ₃ ĥ₅</span></div>
+      <div class="solver-formula" style="font-size:12px;margin-bottom:6px" id="vFormula">y = x + <span class="so">h₃</span>·x³ + <span class="so">h₅</span>·x⁵</div>
+      <div class="sliders">
+        <div class="srow"><span class="slbl">h₃</span><input type="range" class="sor" id="h3" min="0" max="1"   step="0.01"  value="0.30"><span class="sval" id="h3v">0.30</span></div>
+        <div class="srow"><span class="slbl">h₅</span><input type="range" class="sor" id="h5" min="0" max="0.5" step="0.005" value="0.06"><span class="sval" id="h5v">0.06</span></div>
+        <div class="srow"><span class="slbl">IM</span><input type="range" class="sli" id="imx" min="0" max="1"  step="0.01"  value="0.40"><span class="sval" id="imxv">0.40</span></div>
+      </div>
+    </div>
+
+    <!-- IM PRODUCTS TABLE -->
+    <div class="csec">
+      <div class="csec-hd"><div class="csec-dot l"></div><span style="color:var(--li)">INTERMODULATION PRODUCTS</span></div>
+      <table class="im-table" id="imTable">
+        <tbody><tr><td colspan="4" style="color:var(--txD);padding:4px 5px">set two notes to compute</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════ SPECTRUM ═══════════ -->
+<div class="sp">
+  <div class="sp-top">
+    <span class="sec-lbl">FFT SPECTRUM ANALYZER · VOLTERRA IM PRODUCTS</span>
+    <div class="sp-leg">
+      <span class="spa">— f₁ OSC1</span>
+      <span class="spc">— f₂ OSC2</span>
+      <span class="spo">— f₂* corrected</span>
+      <span class="spl">— IM inferred</span>
+    </div>
+  </div>
+  <canvas id="spectrum"></canvas>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const NSU = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+const INT_N = ['P1','m2','M2','m3','M3','P4','TT','P5','m6','M6','m7','M7'];
+const A4 = 440;
+const COLS = 11, ROWS = 6;
+let R = 34; // hex radius, recalculated
+
+// ─── Chord presets: [osc1, osc2, target|null]  (pc, oct)
+const PRESETS = [
+  { name:'TT',   label:'tritone',    notes:[{pc:0,oct:4},{pc:6,oct:4},null] },
+  { name:'DIM°', label:'diminished', notes:[{pc:0,oct:4},{pc:6,oct:4},{pc:11,oct:4}] },
+  { name:'AUG',  label:'augmented',  notes:[{pc:0,oct:4},{pc:4,oct:4},{pc:8,oct:4}] },
+  { name:'WT',   label:'whole-tone', notes:[{pc:0,oct:4},{pc:2,oct:4},{pc:4,oct:4}] },
+  { name:'DIM7', label:'dim-7th',    notes:[{pc:0,oct:4},{pc:3,oct:4},{pc:6,oct:4}] },
+  { name:'DOM',  label:'dom-7 core', notes:[{pc:5,oct:4},{pc:11,oct:4},{pc:2,oct:5}] },
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+const S = {
+  notes:    [{ pc:0, oct:4 }, { pc:6, oct:4 }, null], // OSC1, OSC2, TARGET
+  selSlot:  0,
+  amp1: 0.55, amp2: 0.55,
+  h3: 0.30, h5: 0.06,
+  imx: 0.40,
+  eA: 0.06, eD: 0.18, eS: 0.68, eR: 0.45,
+};
+
+let ACX = null, playing = false, animId = null;
+const ND = {};
+
+// ═══════════════════════════════════════════════════════════════
+//  MUSIC MATH
+// ═══════════════════════════════════════════════════════════════
+function midiToHz(m)     { return A4 * Math.pow(2, (m - 69) / 12); }
+function noteHz(n)       { return n ? midiToHz((n.oct + 1) * 12 + n.pc) : null; }
+function noteName(n)     { return n ? NSU[n.pc] + n.oct : '—'; }
+
+function nearestNote(f) {
+  if (!f || f <= 0 || !isFinite(f)) return null;
+  const m   = Math.round(69 + 12 * Math.log2(f / A4));
+  const pc  = ((m % 12) + 12) % 12;
+  const oct = Math.floor(m / 12) - 1;
+  const fEx = midiToHz(m);
+  const ct  = Math.round(1200 * Math.log2(f / fEx));
+  return { pc, oct, name: NSU[pc] + oct, short: NSU[pc], hz: fEx, cents: ct };
+}
+
+// Volterra IM products for y = x + h3·x³ + h5·x⁵
+// x = A1·cos(ω1) + A2·cos(ω2)
+// Binomial expansion of x³ gives cross-terms; similarly x⁵
+function computeIM(f1, f2, A1, A2, h3, h5) {
+  const out = [];
+  const add = (f, amp, lbl, ord) => {
+    if (f > 15 && f < 14000 && amp > 1e-9) out.push({ freq:f, amp, label:lbl, order:ord });
+  };
+  // 3rd-order cross products
+  add(2*f1 - f2,   (3/4)*h3*A1*A1*A2,          '2f₁−f₂',   3);
+  add(2*f2 - f1,   (3/4)*h3*A1*A2*A2,          '2f₂−f₁',   3);
+  // 5th-order cross products
+  add(3*f1 - 2*f2, (10/16)*h5*A1*A1*A1*A2*A2,  '3f₁−2f₂',  5);
+  add(3*f2 - 2*f1, (10/16)*h5*A1*A1*A2*A2*A2,  '3f₂−2f₁',  5);
+  add(3*f1 + 2*f2, (10/16)*h5*A1*A1*A1*A2*A2,  '3f₁+2f₂',  5);  // upper sideband
+  return out.sort((a, b) => b.amp - a.amp);
+}
+
+// ─── Volterra Auto-Solver
+// Given (n0=OSC1, n1=OSC2_base, n2=TARGET), find f2_corrected such that
+// the most accessible IM product equals n2.hz.
+// Returns full solution object.
+function solveVolterra() {
+  const [n0, n1, n2] = S.notes;
+  if (!n0) return null;
+
+  const f1 = noteHz(n0);
+  if (!n1) return { f1, f2_base:null, f2_corr:null, fm_depth:0, fm_cents:0, f_target:null, im_label:null, ims:[] };
+
+  const f2_base = noteHz(n1);
+  const ims_base = computeIM(f1, f2_base, S.amp1, S.amp2, S.h3, S.h5);
+
+  if (!n2) {
+    // Two notes: just show what IM products arise naturally
+    return { f1, f2_base, f2_corr:f2_base, fm_depth:0, fm_cents:0,
+             f_target: ims_base[0]?.freq ?? null,
+             im_label: ims_base[0]?.label ?? null, ims: ims_base, unconstrained:true };
+  }
+
+  // Three notes: solve for f2_corrected
+  const f3 = noteHz(n2);
+
+  // Candidate IM formulas to try (solve each for f2)
+  const candidates = [
+    { label:'IM3⁺ · 2f₂−f₁=f₃',  f2c: (f3 + f1) / 2,      order:3 },
+    { label:'IM3⁻ · 2f₁−f₂=f₃',  f2c: 2*f1 - f3,           order:3 },
+    { label:'IM5⁺ · 3f₂−2f₁=f₃', f2c: (f3 + 2*f1) / 3,    order:5 },
+    { label:'IM5⁻ · 3f₁−2f₂=f₃', f2c: (3*f1 - f3) / 2,    order:5 },
+  ].filter(c => c.f2c > 30 && c.f2c < 8000);
+
+  if (!candidates.length) return null;
+
+  // Score = semitone distance from f2_base * order penalty
+  candidates.forEach(c => {
+    const semDist = Math.abs(1200 * Math.log2(c.f2c / f2_base)) / 100;  // semitones
+    c.score = semDist * (c.order === 3 ? 1 : 2.5);
+  });
+  candidates.sort((a, b) => a.score - b.score);
+
+  const best = candidates[0];
+  const f2_corr   = best.f2c;
+  const fm_depth  = f2_corr - f2_base;
+  const fm_cents  = 1200 * Math.log2(f2_corr / f2_base);
+  const ims_corr  = computeIM(f1, f2_corr, S.amp1, S.amp2, S.h3, S.h5);
+
+  return { f1, f2_base, f2_corr, fm_depth, fm_cents, f_target:f3,
+           im_label:best.label, im_order:best.order, ims:ims_corr };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  VOLTERRA WAVESHAPER CURVE
+//  y = tanh(x + h3·x³ + h5·x⁵)   [soft-clipped Volterra]
+// ═══════════════════════════════════════════════════════════════
+function makeCurve(h3, h5, N = 8192) {
+  const c = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    const x = (i / (N - 1)) * 2 - 1;
+    c[i] = Math.tanh(x + h3*x*x*x + h5*x*x*x*x*x);
+  }
+  return c;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AUDIO ENGINE
+// ═══════════════════════════════════════════════════════════════
+function initAudio() {
+  ACX = new (window.AudioContext || window.webkitAudioContext)();
+  ND.master   = ACX.createGain(); ND.master.gain.value = 0.5;
+  ND.analyser = ACX.createAnalyser();
+  ND.analyser.fftSize = 8192;
+  ND.analyser.smoothingTimeConstant = 0.82;
+  ND.master.connect(ND.analyser);
+  ND.analyser.connect(ACX.destination);
+}
+
+function clearGraph(hard = false) {
+  if (!ACX) return;
+  const now  = ACX.currentTime;
+  const stop = hard ? now : now + S.eR + 0.08;
+
+  if (!hard && ND.ampEnv) {
+    const cv = ND.ampEnv.gain.value;
+    ND.ampEnv.gain.cancelScheduledValues(now);
+    ND.ampEnv.gain.setValueAtTime(cv, now);
+    ND.ampEnv.gain.linearRampToValueAtTime(0, now + S.eR);
+  }
+  if (!hard && ND.fmEnv) {
+    const cv = ND.fmEnv.gain.value;
+    ND.fmEnv.gain.cancelScheduledValues(now);
+    ND.fmEnv.gain.setValueAtTime(cv, now);
+    ND.fmEnv.gain.linearRampToValueAtTime(0, now + S.eR);
+  }
+
+  ['osc1','osc2','osc3','fmSrc'].forEach(k => {
+    if (ND[k]) { try { ND[k].stop(stop); } catch(e){} ND[k] = null; }
+  });
+
+  if (hard) {
+    ['g1','g2','g3','ampEnv','fmEnv','fmSrc','preG','postG','shaper'].forEach(k => {
+      if (ND[k]) { try { ND[k].disconnect(); } catch(e){} ND[k] = null; }
+    });
+  }
+}
+
+function playSound() {
+  if (!ACX) initAudio();
+  if (ACX.state === 'suspended') ACX.resume();
+  clearGraph(true);
+
+  const sol = solveVolterra();
+  if (!sol || !sol.f1) return;
+
+  const f1       = sol.f1;
+  const f2_base  = sol.f2_base ?? sol.f1;
+  const f2_corr  = sol.f2_corr ?? f2_base;
+  const fm_depth = sol.fm_depth ?? 0;
+  const f_target = sol.f_target;
+
+  // ── OSC1 ── triangle at f1
+  ND.osc1 = ACX.createOscillator();
+  ND.osc1.type = 'triangle';
+  ND.osc1.frequency.value = f1;
+  ND.g1 = ACX.createGain(); ND.g1.gain.value = S.amp1;
+
+  // ── OSC2 ── triangle at f2_base, with FM + amp envelope
+  ND.osc2 = ACX.createOscillator();
+  ND.osc2.type = 'triangle';
+  ND.osc2.frequency.value = f2_base;
+
+  // FM: ConstantSourceNode(fm_depth) × fmEnvGain(ADSR) → osc2.frequency
+  if (sol.f2_base !== null && Math.abs(fm_depth) > 0.01) {
+    ND.fmSrc = ACX.createConstantSource();
+    ND.fmSrc.offset.value = fm_depth;      // Hz deviation
+    ND.fmEnv = ACX.createGain();
+    ND.fmEnv.gain.value = 0;               // starts at 0 (no correction yet)
+    ND.fmSrc.connect(ND.fmEnv);
+    ND.fmEnv.connect(ND.osc2.frequency);  // modulates OSC2 pitch
+    ND.fmSrc.start();
+  }
+
+  // Amplitude envelope (controls OSC2 loudness)
+  ND.ampEnv = ACX.createGain(); ND.ampEnv.gain.value = 0;
+  ND.g2 = ACX.createGain(); ND.g2.gain.value = S.amp2;
+  ND.osc2.connect(ND.ampEnv); ND.ampEnv.connect(ND.g2);
+
+  // Volterra WaveShaper on summed input
+  ND.shaper = ACX.createWaveShaper();
+  ND.shaper.curve = makeCurve(S.h3, S.h5);
+  ND.shaper.oversample = '4x';
+
+  ND.preG  = ACX.createGain(); ND.preG.gain.value  = sol.f2_base !== null ? 0.36 : 0.55;
+  ND.postG = ACX.createGain(); ND.postG.gain.value = 0.92;
+
+  ND.osc1.connect(ND.g1);    ND.g1.connect(ND.preG);
+  ND.g2.connect(ND.preG);
+  ND.preG.connect(ND.shaper);
+  ND.shaper.connect(ND.postG);
+  ND.postG.connect(ND.master);
+
+  // ── OSC3 ── explicit inferred tone at f_target
+  if (f_target && f_target > 20) {
+    const best_im_amp = sol.ims[0]?.amp ?? (S.amp1 * S.amp2 * S.h3 * 0.3);
+    ND.osc3 = ACX.createOscillator();
+    ND.osc3.type = 'triangle';
+    ND.osc3.frequency.value = f_target;
+    ND.g3 = ACX.createGain();
+    ND.g3.gain.value = S.imx * Math.min(0.72, best_im_amp * 5);
+    ND.osc3.connect(ND.g3);
+    ND.g3.connect(ND.master);
+    ND.osc3.start();
+  }
+
+  ND.osc1.start(); ND.osc2.start();
+
+  // ── Schedule ADSR envelopes ──
+  const now = ACX.currentTime;
+  const { eA:A, eD:D, eS:Sus } = S;
+
+  // Amplitude ADSR on OSC2
+  ND.ampEnv.gain.cancelScheduledValues(now);
+  ND.ampEnv.gain.setValueAtTime(0, now);
+  ND.ampEnv.gain.linearRampToValueAtTime(1,   now + A);
+  ND.ampEnv.gain.linearRampToValueAtTime(Sus, now + A + D);
+  // sustain held until stopSound()
+
+  // FM envelope: ramp 0→1 over attack, HOLD at 1 during sustain
+  // (full correction maintained so IM product stays locked on f_target)
+  if (ND.fmEnv) {
+    ND.fmEnv.gain.cancelScheduledValues(now);
+    ND.fmEnv.gain.setValueAtTime(0, now);
+    ND.fmEnv.gain.linearRampToValueAtTime(1, now + A);
+    // No decay: FM stays fully corrected during sustain
+  }
+
+  playing = true;
+  renderPlayBtn();
+}
+
+function stopSound() {
+  clearGraph(false);
+  playing = false;
+  renderPlayBtn();
+}
+
+function renderPlayBtn() {
+  const b = document.getElementById('playBtn');
+  if (playing) { b.textContent = '■ STOP'; b.classList.add('stop'); }
+  else          { b.textContent = '▶ PLAY'; b.classList.remove('stop'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TONNETZ LATTICE
+// ═══════════════════════════════════════════════════════════════
+// Axis: East = +7st (perfect fifth), South = −4st (major third down)
+function pcAt(col, row) { return ((col * 7) - (row * 4) + 1200) % 12; }
+
+function hexCtr(col, row) {
+  const hw = Math.sqrt(3) * R;
+  const x  = (col + (row % 2 === 1 ? 0.5 : 0)) * hw + hw * 0.65;
+  const y  = row * 1.5 * R + R * 1.05;
+  return [x, y];
+}
+
+function hexPath(ctx, cx, cy, r) {
+  r = r ?? R;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (Math.PI / 3) * i - Math.PI / 6;
+    i === 0
+      ? ctx.moveTo(cx + (r - 0.5) * Math.cos(a), cy + (r - 0.5) * Math.sin(a))
+      : ctx.lineTo(cx + (r - 0.5) * Math.cos(a), cy + (r - 0.5) * Math.sin(a));
+  }
+  ctx.closePath();
+}
+
+function sizeTonnetz() {
+  const panel  = document.querySelector('.tp');
+  const preH   = document.querySelector('.presets').offsetHeight + 6;
+  const topH   = document.querySelector('.tp-top').offsetHeight + 6;
+  const legH   = document.querySelector('.tleg').offsetHeight + 6;
+  const availW = panel.clientWidth  - 24;
+  const availH = panel.clientHeight - topH - preH - legH - 14;
+  const rFromW = availW  / ((COLS + 0.5) * Math.sqrt(3));
+  const rFromH = availH  / (ROWS * 1.5 + 0.5) / 2;
+  R = Math.max(18, Math.min(rFromW, rFromH, 44));
+
+  const hw = Math.sqrt(3) * R;
+  const CW = Math.ceil((COLS + 0.7) * hw);
+  const CH = Math.ceil(ROWS * 1.5 * R + R * 1.1 + R);
+
+  const canvas = document.getElementById('tonnetz');
+  const dpr    = window.devicePixelRatio || 1;
+  canvas.width  = CW * dpr; canvas.height = CH * dpr;
+  canvas.style.width  = CW + 'px'; canvas.style.height = CH + 'px';
+  canvas.getContext('2d').scale(dpr, dpr);
+}
+
+function drawTonnetz() {
+  const canvas = document.getElementById('tonnetz');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = window.devicePixelRatio || 1;
+  const W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.clearRect(0, 0, W, H);
+
+  const sol = solveVolterra();
+  const [n0, n1, n2] = S.notes;
+
+  // PCs of relevant notes
+  const pc1  = n0?.pc ?? -1;
+  const pc2  = n1?.pc ?? -1;
+  const pcTg = n2?.pc ?? -1;
+
+  // IM product PC (when only 2 notes, show natural IM product)
+  let pcIM = -1;
+  if (sol?.f_target) {
+    const nn = nearestNote(sol.f_target);
+    if (nn) pcIM = nn.pc;
+  }
+
+  // f2_corrected PC (for annotation)
+  let pcCorr = -1;
+  if (sol?.f2_corr && sol.fm_depth && Math.abs(sol.fm_depth) > 0.5) {
+    const nn = nearestNote(sol.f2_corr);
+    if (nn) pcCorr = nn.pc;
+  }
+
+  // ── Draw edges ──
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const [x1, y1] = hexCtr(col, row);
+      if (col + 1 < COLS) {
+        const [x2, y2] = hexCtr(col + 1, row);
+        ctx.strokeStyle = 'rgba(14,20,52,0.9)'; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+      if (row + 1 < ROWS) {
+        const off = row % 2 === 0 ? 0 : 1;
+        [[col - 1 + off, row + 1], [col + off, row + 1]].forEach(([c, r]) => {
+          if (c >= 0 && c < COLS) {
+            const [x2, y2] = hexCtr(c, r);
+            ctx.strokeStyle = 'rgba(10,14,38,0.8)'; ctx.lineWidth = 0.4;
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+          }
+        });
+      }
+    }
+  }
+
+  // ── Collect positions of selected notes for chord lines ──
+  const nodePos = {}; // pc → [x,y] (first occurrence)
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const pc = pcAt(col, row);
+      if (!nodePos[pc]) nodePos[pc] = hexCtr(col, row);
+    }
+  }
+
+  // Draw chord connection lines
+  const chordPCs = [pc1, pc2, pcTg].filter(p => p >= 0);
+  for (let i = 0; i < chordPCs.length - 1; i++) {
+    const [ax, ay] = nodePos[chordPCs[i]]   || [0, 0];
+    const [bx, by] = nodePos[chordPCs[i+1]] || [0, 0];
+    if (ax && bx) {
+      ctx.save();
+      ctx.setLineDash([3, 6]);
+      ctx.strokeStyle = 'rgba(200,180,100,.18)';
+      ctx.lineWidth   = 1.2;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  // ── Draw hexagons ──
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const pc       = pcAt(col, row);
+      const [cx, cy] = hexCtr(col, row);
+
+      const isOsc1 = pc === pc1;
+      const isOsc2 = pc === pc2;
+      const isTgt  = pc === pcTg && pcTg >= 0;
+      const isIM   = pc === pcIM && pcIM >= 0 && !isOsc1 && !isOsc2 && !isTgt;
+      const isCorr = pc === pcCorr && pcCorr >= 0 && !isOsc1 && !isOsc2 && !isTgt;
+
+      const hue = (pc * 30 + 200) % 360;
+      let fill, stroke, glow = null, gB = 0;
+
+      if (isOsc1) {
+        fill = 'hsl(38,50%,13%)'; stroke = '#e8a228'; glow = 'rgba(232,162,40,.6)'; gB = 24;
+      } else if (isOsc2) {
+        fill = 'hsl(194,48%,11%)'; stroke = '#18c4e0'; glow = 'rgba(24,196,224,.6)'; gB = 24;
+      } else if (isTgt) {
+        fill = 'hsl(152,45%,10%)'; stroke = '#2ae878'; glow = 'rgba(42,232,120,.6)'; gB = 24;
+      } else if (isIM) {
+        fill = 'hsl(152,30%,9%)'; stroke = 'rgba(42,232,120,.55)'; glow = 'rgba(42,232,120,.35)'; gB = 12;
+      } else if (isCorr) {
+        fill = 'hsl(20,40%,11%)'; stroke = 'rgba(240,96,48,.6)'; glow = 'rgba(240,96,48,.4)'; gB = 14;
+      } else {
+        fill   = `hsl(${hue},15%,7%)`;
+        stroke = `hsl(${hue},20%,14%)`;
+      }
+
+      hexPath(ctx, cx, cy);
+      if (glow) { ctx.shadowColor = glow; ctx.shadowBlur = gB; }
+      ctx.fillStyle = fill; ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = stroke; ctx.lineWidth = (isOsc1 || isOsc2 || isTgt) ? 1.6 : 0.5;
+      ctx.stroke();
+
+      // Pulsing outer ring on selected notes
+      if (isOsc1 || isOsc2 || isTgt) {
+        hexPath(ctx, cx, cy, R * 0.96);
+        ctx.strokeStyle = stroke + '44'; ctx.lineWidth = 2.5;
+        ctx.stroke();
+      }
+
+      // Note label
+      const hi = isOsc1 || isOsc2 || isTgt || isIM;
+      ctx.fillStyle = isOsc1 ? '#e8a228'
+                    : isOsc2 ? '#18c4e0'
+                    : isTgt  ? '#2ae878'
+                    : isIM   ? '#2ae87888'
+                    : `hsl(${hue},28%,36%)`;
+      const lbl = NSU[pc];
+      const fs  = lbl.length > 1 ? R * 0.27 : R * 0.33;
+      ctx.font = `${hi ? 700 : 400} ${fs}px 'IBM Plex Mono',monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (hi) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 8; }
+      ctx.fillText(lbl, cx, cy);
+      ctx.shadowBlur = 0;
+
+      // FM correction annotation on OSC2 node
+      if (isOsc2 && sol?.fm_depth && Math.abs(sol.fm_depth) > 0.5) {
+        const cents = sol.fm_cents;
+        const sign  = cents >= 0 ? '+' : '';
+        ctx.font = `700 ${R * 0.22}px 'IBM Plex Mono',monospace`;
+        ctx.fillStyle = '#f06030';
+        ctx.shadowColor = 'rgba(240,96,48,.5)'; ctx.shadowBlur = 5;
+        ctx.fillText(`${sign}${cents.toFixed(0)}¢`, cx, cy + R * 0.48);
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+}
+
+// Tonnetz hit-test → {pc}
+function tonnetzHit(canvas, ex, ey) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr  = window.devicePixelRatio || 1;
+  const sx   = (canvas.width  / dpr) / rect.width;
+  const sy   = (canvas.height / dpr) / rect.height;
+  const mx   = (ex - rect.left) * sx;
+  const my   = (ey - rect.top)  * sy;
+  let best = null, bd = R * 0.94;
+  for (let row = 0; row < ROWS; row++)
+    for (let col = 0; col < COLS; col++) {
+      const [cx, cy] = hexCtr(col, row);
+      const d = Math.hypot(mx - cx, my - cy);
+      if (d < bd) { bd = d; best = pcAt(col, row); }
+    }
+  return best !== null ? { pc: best } : null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ADSR CANVAS
+// ═══════════════════════════════════════════════════════════════
+function drawADSR() {
+  const canvas = document.getElementById('adsrCanvas');
+  canvas.width  = canvas.offsetWidth  * (window.devicePixelRatio || 1);
+  canvas.height = canvas.offsetHeight * (window.devicePixelRatio || 1);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+
+  ctx.fillStyle = '#030610'; ctx.fillRect(0, 0, W, H);
+
+  const { eA:A, eD:D, eS:Sus, eR:Rel } = S;
+  const hold = Math.max(0.3, A + D);
+  const tot  = A + D + hold + Rel;
+  const tx   = t => 2 + (t / tot) * (W - 4);
+  const vy   = v => H - 3 - v * (H - 7);
+
+  const ampPts = [[0,0],[A,1],[A+D,Sus],[A+D+hold,Sus],[tot,0]];
+  const fmPts  = [[0,0],[A,1],[A+D+hold,1],[tot,0]];  // FM holds full correction
+
+  // FM fill (orange, behind amplitude)
+  ctx.beginPath();
+  fmPts.forEach(([t,v],i) => i ? ctx.lineTo(tx(t),vy(v)) : ctx.moveTo(tx(t),vy(v)));
+  ctx.lineTo(W-2, H); ctx.lineTo(2, H); ctx.closePath();
+  ctx.fillStyle = 'rgba(240,96,48,.07)'; ctx.fill();
+  // FM line
+  ctx.beginPath();
+  fmPts.forEach(([t,v],i) => i ? ctx.lineTo(tx(t),vy(v)) : ctx.moveTo(tx(t),vy(v)));
+  ctx.strokeStyle = 'rgba(240,96,48,.55)'; ctx.lineWidth = 1;
+  ctx.setLineDash([3,5]); ctx.stroke(); ctx.setLineDash([]);
+
+  // Amplitude fill
+  ctx.beginPath();
+  ampPts.forEach(([t,v],i) => i ? ctx.lineTo(tx(t),vy(v)) : ctx.moveTo(tx(t),vy(v)));
+  ctx.lineTo(W-2, H); ctx.lineTo(2, H); ctx.closePath();
+  ctx.fillStyle = 'rgba(24,196,224,.07)'; ctx.fill();
+  // Amplitude line
+  ctx.beginPath();
+  ampPts.forEach(([t,v],i) => i ? ctx.lineTo(tx(t),vy(v)) : ctx.moveTo(tx(t),vy(v)));
+  ctx.strokeStyle = '#18c4e0'; ctx.lineWidth = 1.5;
+  ctx.shadowColor = 'rgba(24,196,224,.5)'; ctx.shadowBlur = 5;
+  ctx.stroke(); ctx.shadowBlur = 0;
+
+  // Phase labels
+  ctx.fillStyle = '#1c2850'; ctx.font = '8px IBM Plex Mono'; ctx.textAlign = 'center';
+  [['A',A/2],['D',A+D/2],['S',A+D+hold/2],['R',A+D+hold+Rel/2]].forEach(([l,t]) => {
+    ctx.fillText(l, tx(t), H - 1);
+  });
+  // Legend
+  ctx.font = '8px IBM Plex Mono'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#18c4e088'; ctx.fillText('amp', 4, 9);
+  ctx.fillStyle = '#f0603088'; ctx.fillText('fm', 4, 18);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SPECTRUM ANALYZER
+// ═══════════════════════════════════════════════════════════════
+function sizeSpectrum() {
+  const panel = document.querySelector('.sp');
+  const W = panel.clientWidth  - 24;
+  const H = panel.clientHeight - 28;
+  const canvas = document.getElementById('spectrum');
+  const dpr    = window.devicePixelRatio || 1;
+  canvas.width  = W * dpr; canvas.height = H * dpr;
+  canvas.style.width  = W + 'px'; canvas.style.height = H + 'px';
+}
+
+function drawSpectrum() {
+  const canvas = document.getElementById('spectrum');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const ctx  = canvas.getContext('2d');
+  const W = canvas.width / dpr, H = canvas.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#030610'; ctx.fillRect(0, 0, W, H);
+
+  if (!ND.analyser || !ACX) { drawIdleSpectrum(ctx, W, H); return; }
+
+  const bLen   = ND.analyser.frequencyBinCount;
+  const data   = new Uint8Array(bLen);
+  ND.analyser.getByteFrequencyData(data);
+  const sr   = ACX.sampleRate;
+  const bHz  = sr / ND.analyser.fftSize;
+
+  const minF = 20, maxF = 8000;
+  const lMin = Math.log2(minF), lMax = Math.log2(maxF);
+  const fx   = f => ((Math.log2(Math.max(f, minF)) - lMin) / (lMax - lMin)) * W;
+
+  // Grid
+  ctx.strokeStyle = '#0a0e22'; ctx.lineWidth = 0.4;
+  [50,100,200,500,1000,2000,4000].forEach(f => {
+    const x = fx(f);
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H - 11); ctx.stroke();
+  });
+
+  // Bars
+  for (let i = 1; i < bLen; i++) {
+    const f = i * bHz;
+    if (f < minF || f > maxF) continue;
+    const x1 = fx(f), x2 = fx((i+1)*bHz);
+    const bH = (data[i] / 255) * (H - 13);
+    if (bH < 0.5) continue;
+    const t = (f - minF) / (maxF - minF);
+    ctx.fillStyle = `rgba(${Math.round(26+t*210)},${Math.round(196-t*160)},${Math.round(224-t*150)},0.7)`;
+    ctx.fillRect(x1, H - bH - 11, Math.max(1, x2 - x1 - 0.2), bH);
+  }
+
+  // Markers
+  const sol = solveVolterra();
+  const mark = (f, color, lbl, row) => {
+    if (!f || f < minF || f > maxF) return;
+    const x = fx(f);
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.4;
+    ctx.setLineDash([3,4]); ctx.shadowColor = color; ctx.shadowBlur = 5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H - 13); ctx.stroke();
+    ctx.setLineDash([]); ctx.shadowBlur = 0;
+    ctx.fillStyle = color; ctx.font = 'bold 9px IBM Plex Mono'; ctx.textAlign = 'center';
+    ctx.fillText(lbl, x, row);
+    ctx.restore();
+  };
+
+  if (sol) {
+    mark(sol.f1,      'rgba(232,162,40,.9)', 'f₁', 9);
+    mark(sol.f2_base, 'rgba(24,196,224,.9)', 'f₂', 17);
+    if (sol.f2_corr && Math.abs(sol.fm_depth) > 0.5)
+      mark(sol.f2_corr, 'rgba(240,96,48,.8)', 'f₂*', 9);
+    sol.ims.slice(0,3).forEach((im, i) =>
+      mark(im.freq, 'rgba(42,232,120,.75)', im.label.replace('−','−'), 9 + (i % 2)*8));
+  }
+
+  // Freq labels
+  ctx.fillStyle = '#1a2044'; ctx.font = '8px IBM Plex Mono'; ctx.textAlign = 'center';
+  [[50,'50'],[100,'100'],[200,'200'],[500,'500'],[1000,'1k'],[2000,'2k'],[4000,'4k']].forEach(([f,l]) => {
+    ctx.fillText(l, fx(f), H - 1);
+  });
+}
+
+function drawIdleSpectrum(ctx, W, H) {
+  ctx.fillStyle = '#0e1228'; ctx.font = '9px IBM Plex Mono'; ctx.textAlign = 'center';
+  ctx.fillText('[ press PLAY to activate spectrum analyzer ]', W/2, H/2);
+}
+
+function startAnim() {
+  const loop = () => { drawSpectrum(); animId = requestAnimationFrame(loop); };
+  if (animId) cancelAnimationFrame(animId);
+  animId = requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UI UPDATES
+// ═══════════════════════════════════════════════════════════════
+function updateNoteCards() {
+  const cont = document.getElementById('noteCards');
+  cont.innerHTML = '';
+  const roles  = ['OSC1','OSC2','TGT'];
+  const cls    = ['a','c','l'];
+  const labels = ['OSC 1','OSC 2','TARGET'];
+
+  S.notes.forEach((n, i) => {
+    const div = document.createElement('div');
+    div.className = 'ncard' + (n ? '' : ' empty');
+    const f  = n ? noteHz(n) : null;
+    const nm = n ? noteName(n) : '—';
+    div.innerHTML = `
+      <div class="ncard-role ${cls[i]}">${roles[i]}</div>
+      <div class="ncard-body">
+        <div class="ncard-note ${n ? cls[i] : 'empty'}">${nm}</div>
+        <div class="ncard-hz">${f ? f.toFixed(2)+' Hz' : 'not set'}</div>
+      </div>
+      <div class="ncard-ctrl">
+        <div class="oct-btns">
+          <button class="oct-btn" data-slot="${i}" data-d="-1">▼</button>
+          <button class="oct-btn" data-slot="${i}" data-d="1">▲</button>
+        </div>
+        <div class="ncard-oct">${n ? 'oct '+n.oct : ''}</div>
+      </div>`;
+    cont.appendChild(div);
+  });
+
+  // Octave button listeners
+  cont.querySelectorAll('.oct-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const slot = +btn.dataset.slot;
+      const d    = +btn.dataset.d;
+      if (S.notes[slot]) {
+        S.notes[slot].oct = Math.max(1, Math.min(7, S.notes[slot].oct + d));
+        updateAll();
+        if (playing) playSound();
+      }
+    });
+  });
+}
+
+function updateSolverBox() {
+  const box = document.getElementById('solverBox');
+  const sol = solveVolterra();
+
+  if (!sol || !sol.f2_base) {
+    box.innerHTML = `<div class="solver-formula">select two or more notes</div>`;
+    return;
+  }
+
+  const hasTgt    = S.notes[2] !== null;
+  const hasFM     = Math.abs(sol.fm_depth) > 0.1;
+  const f3nn      = sol.f_target ? nearestNote(sol.f_target) : null;
+  const f2cnn     = sol.f2_corr  ? nearestNote(sol.f2_corr)  : null;
+
+  let html = `<div class="solver-formula">`;
+  if (hasTgt) {
+    html += `<span class="sl">f₃</span> = 2·<span class="sc">f₂*</span> − <span class="sv">f₁</span>`;
+  } else {
+    html += `<span class="sl">f<sub>IM</sub></span> = 2·<span class="sc">f₂</span> − <span class="sv">f₁</span>`;
+  }
+  html += `</div>`;
+
+  const rows = [
+    ['f₁ (OSC1)',   `<span class="sv">${sol.f1.toFixed(2)} Hz</span>  ${noteName(S.notes[0])}`],
+    ['f₂ base',     `<span class="sc">${sol.f2_base.toFixed(2)} Hz</span>  ${noteName(S.notes[1])}`],
+  ];
+
+  if (hasFM) {
+    rows.push(['f₂* corrected', `<span class="so">${sol.f2_corr.toFixed(2)} Hz  ${f2cnn?.name ?? ''}</span>`]);
+    const sign = sol.fm_cents >= 0 ? '+' : '';
+    rows.push(['Δf₂ (FM depth)', `<span class="so">${sol.fm_depth > 0 ? '+' : ''}${sol.fm_depth.toFixed(2)} Hz  (${sign}${sol.fm_cents.toFixed(1)}¢)</span>`]);
+    rows.push(['IM formula', `<span style="color:var(--txM)">${sol.im_label}</span>`]);
+  }
+
+  if (sol.f_target) {
+    rows.push(['f₃ target', `<span class="sl">${sol.f_target.toFixed(2)} Hz  ${f3nn?.name ?? ''}</span>`]);
+  }
+
+  html += rows.map(([k,v]) =>
+    `<div class="solver-row"><span class="solver-key">${k}</span><span class="solver-val">${v}</span></div>`
+  ).join('');
+
+  box.innerHTML = html;
+}
+
+function updateIMTable() {
+  const sol = solveVolterra();
+  const tbody = document.querySelector('#imTable tbody');
+  if (!sol || !sol.f2_base) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--txD);padding:4px 5px">set two notes to compute</td></tr>`;
+    return;
+  }
+  if (!sol.ims.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--txD);padding:4px 5px">no IM products in range</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sol.ims.slice(0, 6).map((im, i) => {
+    const nn = nearestNote(im.freq);
+    return `<tr class="${i===0?'best':''}">
+      <td class="im-ord">×${im.order}</td>
+      <td class="im-lbl">${im.label}</td>
+      <td class="im-freq">${im.freq.toFixed(1)} Hz</td>
+      <td class="im-note">${nn ? nn.name : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function updateHeader() {
+  const [n0, n1] = S.notes;
+  const badge = document.getElementById('hBadge');
+  if (!n0 || !n1) { badge.textContent = '—'; badge.className = 'h-badge'; return; }
+  const st  = ((n1.pc - n0.pc) + 12) % 12;
+  const isTT = st === 6;
+  badge.textContent = `${INT_N[st]} · ${st}st`;
+  badge.className   = 'h-badge' + (isTT ? ' tt' : '');
+}
+
+function updateSlotBtns() {
+  [0,1,2].forEach(i => {
+    document.getElementById('sb' + i).classList.toggle('on', S.selSlot === i);
+  });
+}
+
+function updateVFormula() {
+  document.getElementById('vFormula').innerHTML =
+    `y = x + <span class="so">${S.h3.toFixed(2)}</span>·x³ + <span class="so">${S.h5.toFixed(3)}</span>·x⁵`;
+}
+
+function updateAll() {
+  updateNoteCards();
+  updateSolverBox();
+  updateIMTable();
+  updateHeader();
+  updateSlotBtns();
+  updateVFormula();
+  drawTonnetz();
+  drawADSR();
+}
+
+// Live update audio params without full restart
+function liveUpdate() {
+  if (!ACX || !playing) return;
+  const sol = solveVolterra();
+  if (!sol) return;
+  if (ND.g1) ND.g1.gain.value = S.amp1;
+  if (ND.g2) ND.g2.gain.value = S.amp2;
+  if (ND.g3 && sol.ims[0]) ND.g3.gain.value = S.imx * Math.min(0.72, sol.ims[0].amp * 5);
+  if (ND.shaper) ND.shaper.curve = makeCurve(S.h3, S.h5);
+  if (ND.fmSrc && sol.fm_depth !== undefined) ND.fmSrc.offset.value = sol.fm_depth;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CHORD PRESETS
+// ═══════════════════════════════════════════════════════════════
+function buildPresets() {
+  const cont = document.getElementById('presets');
+  PRESETS.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'preBtn';
+    btn.innerHTML = `<b>${p.name}</b><span style="color:var(--txD);margin-left:4px">${p.label}</span>`;
+    btn.addEventListener('click', () => {
+      S.notes = p.notes.map(n => n ? { ...n } : null);
+      S.selSlot = 0;
+      updateAll();
+      if (playing) playSound();
+    });
+    cont.appendChild(btn);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONTROL BINDINGS
+// ═══════════════════════════════════════════════════════════════
+function bindControls() {
+
+  // Play/Stop
+  document.getElementById('playBtn').addEventListener('click', () => {
+    playing ? stopSound() : playSound();
+  });
+
+  // Slot buttons
+  [0,1,2].forEach(i => {
+    document.getElementById('sb' + i).addEventListener('click', () => {
+      S.selSlot = i; updateSlotBtns();
+    });
+  });
+
+  // Clear chord
+  document.getElementById('sbClr').addEventListener('click', () => {
+    S.notes = [null, null, null]; S.selSlot = 0;
+    if (playing) stopSound();
+    updateAll();
+  });
+
+  // Tonnetz clicks
+  const tc = document.getElementById('tonnetz');
+  tc.addEventListener('contextmenu', e => e.preventDefault());
+  tc.addEventListener('mousedown', e => {
+    const h = tonnetzHit(tc, e.clientX, e.clientY);
+    if (h === null) return;
+    e.preventDefault();
+
+    const slot = e.button === 2 ? 1 : S.selSlot; // right-click always OSC2
+    // If same pc already in this slot: deselect
+    if (S.notes[slot] && S.notes[slot].pc === h.pc) {
+      S.notes[slot] = null;
+    } else {
+      // Smart octave: keep in a reasonable range relative to OSC1
+      let oct = 4;
+      if (slot === 1 && S.notes[0]) {
+        const f1 = noteHz(S.notes[0]);
+        const f_same = midiToHz((4 + 1) * 12 + h.pc);
+        if (f_same < f1 * 0.5) oct = 5;
+        else if (f_same > f1 * 4) oct = 3;
+      }
+      if (slot === 2 && S.notes[1]) {
+        const f2 = noteHz(S.notes[1]);
+        const f_same = midiToHz((4 + 1) * 12 + h.pc);
+        if (f_same < f2 * 0.6) oct = 5;
+        else if (f_same > f2 * 3) oct = 3;
+      }
+      S.notes[slot] = { pc: h.pc, oct };
+    }
+
+    // Auto-advance slot
+    if (S.selSlot === slot && S.notes[slot] !== null && slot < 2) {
+      S.selSlot = slot + 1; 
+    }
+
+    updateAll();
+    if (playing) playSound();
+  });
+
+  // Slider helper
+  const slider = (id, key, fmt) => {
+    const el = document.getElementById(id);
+    const vEl = document.getElementById(id + 'v');
+    el.addEventListener('input', () => {
+      const v = parseFloat(el.value);
+      S[key] = key === 'oct1' || key === 'oct2' ? parseInt(el.value) : v;
+      vEl.textContent = fmt(v);
+      liveUpdate();
+      updateAll();
+    });
+  };
+
+  const msF = v => Math.round(v * 1000) + 'ms';
+  const f2  = v => v.toFixed(2);
+  const f3  = v => v.toFixed(3);
+
+  slider('sa1',  'amp1', f2);
+  slider('sa2',  'amp2', f2);
+  slider('eA',   'eA',   msF);
+  slider('eD',   'eD',   msF);
+  slider('eS',   'eS',   f2);
+  slider('eR',   'eR',   msF);
+  slider('h3',   'h3',   f2);
+  slider('h5',   'h5',   f3);
+  slider('imx',  'imx',  f2);
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? stopSound() : playSound(); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════
+function init() {
+  buildPresets();
+  sizeTonnetz();
+  sizeSpectrum();
+  bindControls();
+  updateAll();
+  startAnim();
+
+  window.addEventListener('resize', () => {
+    sizeTonnetz();
+    sizeSpectrum();
+    updateAll();
+  });
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
